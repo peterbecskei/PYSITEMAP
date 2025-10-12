@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 
 
 class SiteMapCommander:
-    def __init__(self, base_url="https://www.idokep.hu", get_content=True):
+    def __init__(self, base_url="https://www.zsu.hu", get_content=False):
         self.base_url = base_url
         self.get_content = get_content
         self.level1_links = []
@@ -35,6 +35,13 @@ class SiteMapCommander:
             if self.get_content:
                 self._save_content(response.text, "1.txt")
                 filename = f"level1_links.html"
+                linkfilter = set()
+                for urls in self.level1_links:
+                    if urls.startswith('http'):
+                        linkfilter.add(urls)
+                self.level1_links = list(linkfilter)
+                print(f"Filtered Level 1 links: {len(self.level1_links)}")
+
                 with open(filename, 'w', newline='', encoding='utf-8') as f:
                     for urls in self.level1_links:
                          if urls.startswith('http'):
@@ -153,5 +160,5 @@ if __name__ == "__main__":
     commander = SiteMapCommander()
     commander.fetch0()
     print(commander.get_data())
-    #commander.fetch2()
-    #print(commander.get_data())
+    commander.fetch2()
+    print(commander.get_data())
