@@ -36,6 +36,7 @@ import os
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 from typing import List, Set, Dict
+import urllib.parse
 
 
 class SiteMapCommander:
@@ -45,6 +46,7 @@ class SiteMapCommander:
             "level1Links": [],
             "level2Links": [],
             "GETCONTENT": True,
+            "proxied" : False,
             "status": "Initialized",
         }
         self.config = defaults if config is None else {**defaults, **config}
@@ -139,7 +141,10 @@ class SiteMapCommander:
     def _fetch(self, url: str) -> str:
         headers = {"User-Agent": self.user_agent}
         try:
-            resp = requests.get(url, headers=headers, timeout=self.timeout)
+            proxied_url = 'https://api.allorigins.win/raw?url=' + urllib.parse.quote(url)
+            if self.config.get("proxied", False): proxied_url=url
+            print(proxied_url, self.config.get("proxied"))
+            resp = requests.get(proxied_url, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
             return resp.text
         except Exception as e:

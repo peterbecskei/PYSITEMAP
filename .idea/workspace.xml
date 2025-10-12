@@ -5,9 +5,6 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ba242e7b-2834-4595-acbc-29ca749b40cd" name="Changes" comment="first commit">
-      <change afterPath="$PROJECT_DIR$/FETCHMAIL.PY" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/PYSITEMAP.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/PYSITEMAP.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/PYSITEMAP5.PY" beforeDir="false" afterPath="$PROJECT_DIR$/PYSITEMAP5.PY" afterDir="false" />
     </list>
@@ -93,7 +90,15 @@
       <option name="project" value="LOCAL" />
       <updated>1760020253137</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="first commit">
+      <option name="closed" value="true" />
+      <created>1760278619166</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1760278619166</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
