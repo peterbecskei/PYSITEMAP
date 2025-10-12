@@ -46,7 +46,7 @@ class SiteMapCommander:
             "level1Links": [],
             "level2Links": [],
             "GETCONTENT": True,
-            "proxied" : False,
+            "proxied" : True,
             "status": "Initialized",
         }
         self.config = defaults if config is None else {**defaults, **config}
@@ -144,7 +144,20 @@ class SiteMapCommander:
             proxied_url = 'https://api.allorigins.win/raw?url=' + urllib.parse.quote(url)
             if self.config.get("proxied") : proxied_url=url
             print(proxied_url, self.config.get("proxied"))
-            resp = requests.get(proxied_url, headers=headers, timeout=self.timeout)
+            proxy_ip = "211.230.49.122"
+            proxy_port = "3128"
+    #92.242.184.2 4153
+            proxy_ip = "202.152.44.18"
+            proxy_port = "8081"
+
+            proxy_url = f"http://{proxy_ip}:{proxy_port}"
+
+            proxies = {
+                "http": proxy_url,
+                "https": proxy_url
+            }
+
+            resp = requests.get(proxied_url, headers=headers, proxies=proxies, timeout=self.timeout)
             resp.raise_for_status()
             return resp.text
         except Exception as e:
