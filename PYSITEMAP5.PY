@@ -41,10 +41,10 @@ from typing import List, Set, Dict
 class SiteMapCommander:
     def __init__(self, config: Dict = None):
         defaults = {
-            "BASEURL": "https://www.zsu.hu",
+            "BASEURL": "https://www.companywall.hu/SiteMap/Companies?p=1110",
             "level1Links": [],
             "level2Links": [],
-            "GETCONTENT": False,
+            "GETCONTENT": True,
             "status": "Initialized",
         }
         self.config = defaults if config is None else {**defaults, **config}
@@ -203,7 +203,7 @@ class SiteMapCommander:
 
         for url in level1:
             # Basic validation
-            print(url)
+            print(nid, url)
             if not url or not url.startswith("http"):
                 continue
             # robots.txt check for this URL
@@ -242,7 +242,7 @@ if __name__ == "__main__":
     smc = SiteMapCommander()
     print("Running fetch0() from", smc.config['BASEURL'])
     #smc.fetch0()
-    #print(smc.config['status'])
+    print(smc.config['status'])
     print("Running fetch2() from level1Links.csv")
     smc.fetch2()
     print(smc.config['status'])
