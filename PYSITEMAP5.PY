@@ -42,7 +42,7 @@ import urllib.parse
 class SiteMapCommander:
     def __init__(self, config: Dict = None):
         defaults = {
-            "BASEURL": "https://www.companywall.hu/SiteMap/Companies?p=1110",
+            "BASEURL": "https://www.companywall.hu/SiteMap/Companies?p=1112",
             "level1Links": [],
             "level2Links": [],
             "GETCONTENT": True,
@@ -142,7 +142,7 @@ class SiteMapCommander:
         headers = {"User-Agent": self.user_agent}
         try:
             proxied_url = 'https://api.allorigins.win/raw?url=' + urllib.parse.quote(url)
-            if self.config.get("proxied", False): proxied_url=url
+            if self.config.get("proxied") : proxied_url=url
             print(proxied_url, self.config.get("proxied"))
             resp = requests.get(proxied_url, headers=headers, timeout=self.timeout)
             resp.raise_for_status()
