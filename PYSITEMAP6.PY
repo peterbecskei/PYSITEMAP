@@ -671,7 +671,7 @@ if match:
     print(f"Status: {status}")
 print(PROXI_LIST)
 print(proxys)
-proxys=PROXI_LIST[:20]
+proxys=PROXI_LIST[:40]
 while i < len(proxys):
     proxy =  proxys[i % len(proxys)]
 
