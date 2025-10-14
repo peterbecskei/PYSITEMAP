@@ -312,8 +312,8 @@ if __name__ == "__main__":
     # simple example run
     smc = SiteMapCommander()
     print("Running fetch0() from", smc.config['BASEURL'])
-    #smc.fetch0()
+    smc.fetch0()
     print(smc.config['status'])
     print("Running fetch2() from level1Links.csv")
-    smc.fetch2()
+    #smc.fetch2()
     print(smc.config['status'])
