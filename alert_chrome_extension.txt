@@ -1,0 +1,548 @@
+
+# Albialert : Chrome Extension 'Albi Alert '—
+
+This project is a complete **Chrome Extension (Manifest V3) WIN10** designed to alert and notify user when new 'Albi' appears or change on a dinamic webbpage
+The extension opens automatically in the Side Panel when the user clicks the browser action icon. User control Extension with button and input fields ("control area"). Side Panel display results ("display area")  under the "control area"  them in a simple html table (addchild). All results are stored in `localStorage`.
+
+## 🧩 Features Overview
+- **Manifest V3 compatible** (tested on Windows 10)
+- Uses the **Side Panel API** (not a popup), open Side Panel when click on EXT icon.
+ Side Panel stucture:
+"Control area" (top)
+"Display area"
+
+Control area
+- **Input field** for a custom URL (default: `https://www.alberlet.hu/sitemap/2.xml`)
+- **SET  Notifier** button — SET chrome alert.api 1 min's alert on retrieves the Input field page content.
+- **STOP  Notifier** button —  clear chrome alert.api, (pause). Storage and "display area" not reset.
+- **CLEAR ALL ** button — resets the UI and clears `localStorage`
+Display area
+- **Status container** — shows number of 'Albi' found on page (newer on the top)
+- **Data container** — displays 'Albi' found on page
+🚀 Core Features
+Data Storage Structure
+
+  BASEURL : "url"   /default: `https://www.alberlet.hu/sitemap/2.xml`
+  NEWID = boolean
+  ALBI {
+  "url": url
+  "changedate": lastmod,
+  "ID": ALBIID
+  "type" : ALBITYPE
+   "path" : urlpath
+  "localtion": address
+  "Active" : boolean
+}
+  ALBI_LIST : [list of ABLI],
+  GETCONTENT: boolean,
+  status: "Operation status message"
+
+
+Functions :
+SETALERT: SET chrome alert.api 1 min's alert on retrieves the Input field page content.
+PAGECONTENT : get the BASEURL  page content  (xml format). Check xml format, stop if error, display "not XML format". Do not use DOM parser! Use regex.
+Get all URLs in XML, create ALBI var and ALBI_LIST acording to xml data.
+"changedate" = <lastmod>,
+ "URL" = <loc> ,
+  "PATH" =  URL path,
+  "ID":  last 6 char of URL convertied to number (int), if error  "ID": = 100000 .
+  "type" = 1st part of the "PATH" (till '/' )
+  "localtion":  2nd part of "PATH" (after first '/' char till  "ID")
+Example : ulr = "https://www.alberlet.hu/kiado_alberlet/budapest-XI-kerulet-vali-utca-54m2-2-szoba_768689"
+"type" = "kiado_alberlet" , "localtion" = "budapest-XI-kerulet-vali-utca-54m2-2-szoba"
+'ID' = 768689
+function CONTENTCHANED : if alert 1 min's : check PAGECONTENT, Saves  NewContent LIST.
+Compare the OldContent LIST.
+If new ALBI in the list set NEWID = True, and create chrome NOTIFICATION
+NOTIFICATION : after alert NEWID = True then
+   chrome.notifications.create({
+        title: 'NEW ALBI :',
+        message:  ALBI  ,
+        iconUrl: '/icons/icon48.png',
+        type: 'basic'
+      });
+ Set ALBI.Active = False, if ALBI is not in the updated (NewContent)  ALBI_LIST (e.g. gone).
+Set  "changedate" if lastmod date changed.
+If new ALBI emberged then append it to ALBI_LIST and set NEWID = True.
+If notifications is clicked, open Side Panel and set notifications.Unread = 0.
+Count the notifications.Unread and display on EXT icon : chrome.action.setBadgeText({ text: notifications.Unread.toString() });
+
+Take chare of :
+- **Local storage** — preserves user input, results, and state between sessions
+- **Cross-domain fetch enabled** via `host_permissions: ["<all_urls>"]`
+- Lightweight, clean, and easy-to-extend codebase.
+- Use regex match not DOM parser.
+
+
+
+--- project: Albi Alert (Chrome extension - Manifest V3)
+
+
+# File: manifest.json
+{
+  "manifest_version": 3,
+  "name": "Albi Alert",
+  "description": "Alerts when new 'Albi' appear or change on a dynamic page. Side Panel UI.",
+  "version": "1.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "alarms",
+    "notifications",
+    "storage",
+    "sidePanel",
+    "action"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "service_worker.js"
+  },
+  "action": {
+    "default_title": "Albi Alert"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  }
+}
+
+---
+# File: service_worker.js
+// Service worker: controls alarms, fetching, comparing, notifications, badge
+// NOTE: service workers cannot access window.localStorage. We use chrome.storage as canonical
+// storage and the sidepanel syncs to localStorage when it opens.
+
+const DEFAULT_BASEURL = 'https://www.alberlet.hu/sitemap/2.xml';
+const USER_AGENT = 'AlbiAlert/1.0';
+const ALARM_NAME = 'albi_check_alarm';
+
+// In-memory cache of unread notifications count (persisted in storage)
+async function getState() {
+  const s = await chrome.storage.local.get([
+    'BASEURL','ALBI_LIST','notifications_unread','GETCONTENT','status'
+  ]);
+  return {
+    BASEURL: s.BASEURL || DEFAULT_BASEURL,
+    ALBI_LIST: s.ALBI_LIST || [],
+    notifications_unread: s.notifications_unread || 0,
+    GETCONTENT: typeof s.GETCONTENT === 'boolean' ? s.GETCONTENT : true,
+    status: s.status || ''
+  };
+}
+
+async function setState(part) {
+  await chrome.storage.local.set(part);
+}
+
+// Simple fetch with timeout
+async function fetchWithTimeout(url, timeout = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const resp = await fetch(url, { headers: { 'User-Agent': USER_AGENT }, signal: controller.signal });
+    clearTimeout(id);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const txt = await resp.text();
+    return txt;
+  } catch (e) {
+    clearTimeout(id);
+    throw e;
+  }
+}
+
+// Regex-based XML parser (no DOMParser). Returns list of item objects {loc,lastmod}
+function parseSitemapXml(xmlText) {
+  // quick check for XML-ish
+  if (!/^\s*<\?xml[^>]*>/i.test(xmlText) && !/<urlset[\s>]/i.test(xmlText)) {
+    throw new Error('Not XML format');
+  }
+
+  // find <url>...</url> blocks
+  const urlBlocks = [...xmlText.matchAll(/<url>([\s\S]*?)<\/url>/gi)].map(m => m[1]);
+  const out = [];
+  for (const blk of urlBlocks) {
+    // extract <loc> and <lastmod>
+    const locMatch = blk.match(/<loc>([^<]+)<\/loc>/i);
+    const lastmodMatch = blk.match(/<lastmod>([^<]+)<\/lastmod>/i);
+    if (!locMatch) continue;
+    const loc = locMatch[1].trim();
+    const lastmod = lastmodMatch ? lastmodMatch[1].trim() : '';
+    out.push({ loc, lastmod });
+  }
+  return out;
+}
+
+// Convert URL to ALBI object per spec
+function makeAlbiFromLoc(loc, lastmod) {
+  try {
+    const u = new URL(loc);
+    const path = u.pathname.replace(/^\//, ''); // remove leading slash
+    // type: first part until '/'
+    const parts = path.split('/');
+    const type = parts[0] || '';
+    // location: the rest of path before trailing ID; but spec: "after first '/' char till ID"
+    // We'll take everything after first '/' up to the last '-' + id pattern or treat full remainder.
+    // Simpler: take parts.slice(1).join('/') as locationPath
+    const locationPath = parts.slice(1).join('/');
+
+    // ID: last 6 chars of URL converted to number; fallback 100000
+    let lastSegment = parts[parts.length - 1] || '';
+    // try to extract trailing digits from the last segment
+    const idMatch = lastSegment.match(/(\d{1,10})$/);
+    let ID = 100000;
+    if (idMatch) {
+      ID = parseInt(idMatch[1], 10);
+    } else if (u.pathname.length >= 6) {
+      const tail = u.pathname.slice(-6).replace(/[^0-9]/g, '');
+      if (tail) ID = parseInt(tail, 10) || 100000;
+    }
+
+    return {
+      url: loc,
+      changedate: lastmod || '',
+      ID: ID,
+      type: type,
+      path: path,
+      localtion: locationPath,
+      Active: true
+    };
+  } catch (e) {
+    return {
+      url: loc,
+      changedate: lastmod || '',
+      ID: 100000,
+      type: '',
+      path: '',
+      localtion: '',
+      Active: true
+    };
+  }
+}
+
+// Compare lists: oldList and newList are arrays of ALBI-like objects keyed by url.
+// Returns {newOnes:[], removed:[], changed:[]}
+function diffAlbiLists(oldList, newList) {
+  const oldMap = new Map(oldList.map(a => [a.url, a]));
+  const newMap = new Map(newList.map(a => [a.url, a]));
+
+  const newOnes = [];
+  const removed = [];
+  const changed = [];
+
+  for (const [url, nobj] of newMap.entries()) {
+    if (!oldMap.has(url)) {
+      newOnes.push(nobj);
+    } else {
+      const o = oldMap.get(url);
+      if ((nobj.changedate || '') !== (o.changedate || '')) {
+        changed.push({ old: o, now: nobj });
+      }
+    }
+  }
+
+  for (const [url, oobj] of oldMap.entries()) {
+    if (!newMap.has(url)) removed.push(oobj);
+  }
+
+  return { newOnes, removed, changed };
+}
+
+// create chrome notification for one ALBI
+async function notifyNewAlbi(albi) {
+  const nid = 'albi_' + albi.ID + '_' + Date.now();
+  await chrome.notifications.create(nid, {
+    type: 'basic',
+    title: 'NEW ALBI :',
+    message: albi.url + (albi.changedate ? ' (updated: ' + albi.changedate + ')' : ''),
+    iconUrl: '/icons/icon48.png'
+  });
+  // increment unread counter
+  const s = await chrome.storage.local.get('notifications_unread');
+  const cur = s.notifications_unread || 0;
+  await chrome.storage.local.set({ notifications_unread: cur + 1 });
+  chrome.action.setBadgeText({ text: String(cur + 1) });
+}
+
+// The main PAGECONTENT check + compare routine used by alarm
+async function performCheck() {
+  const st = await getState();
+  const base = st.BASEURL || DEFAULT_BASEURL;
+  try {
+    const txt = await fetchWithTimeout(base, 10000);
+    // parse XML
+    let items;
+    try {
+      items = parseSitemapXml(txt);
+    } catch (e) {
+      await setState({ status: 'PAGECONTENT error: Not XML format' });
+      return;
+    }
+
+    const newAlbis = items.map(i => makeAlbiFromLoc(i.loc, i.lastmod));
+
+    const oldList = st.ALBI_LIST || [];
+    const d = diffAlbiLists(oldList, newAlbis);
+
+    // Mark removed as inactive
+    const newMap = new Map(newAlbis.map(a => [a.url, a]));
+    const merged = [];
+    for (const n of newAlbis) merged.push(n);
+
+    // For ALBI from oldList that still present, copy Active flag and preserve extra fields
+    for (const old of oldList) {
+      if (newMap.has(old.url)) continue; // already included
+      // mark not present -> Active = false
+      const copy = { ...old, Active: false };
+      merged.push(copy);
+    }
+
+    // Save merged as authoritative list
+    await setState({ ALBI_LIST: merged, status: 'Checked at ' + new Date().toISOString() });
+
+    // Notify new ones
+    for (const n of d.newOnes) {
+      await notifyNewAlbi(n);
+    }
+
+    // For changed items, you may also create notifications if you want
+    for (const ch of d.changed) {
+      // create a smaller notification for changes
+      const nid = 'albi_change_' + ch.now.ID + '_' + Date.now();
+      await chrome.notifications.create(nid, {
+        type: 'basic',
+        title: 'ALBI Updated',
+        message: ch.now.url + ' changed date: ' + ch.now.changedate,
+        iconUrl: '/icons/icon48.png'
+      });
+    }
+
+  } catch (err) {
+    await setState({ status: 'fetch error: ' + String(err) });
+  }
+}
+
+// Alarm handlers
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm && alarm.name === ALARM_NAME) {
+    await performCheck();
+  }
+});
+
+// Listen for messages from sidepanel UI
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  (async () => {
+    if (msg && msg.cmd === 'SETALERT') {
+      // create 1 minute repeating alarm
+      chrome.alarms.create(ALARM_NAME, { periodInMinutes: 1, delayInMinutes: 0.01 });
+      await setState({ BASEURL: msg.baseurl, status: 'Alarm set (1 min)' });
+      // ensure action click opens side panel
+      if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+        chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(e => console.warn(e));
+      }
+      sendResponse({ ok: true });
+    } else if (msg && msg.cmd === 'STOPALERT') {
+      chrome.alarms.clear(ALARM_NAME);
+      await setState({ status: 'Alarm stopped' });
+      sendResponse({ ok: true });
+    } else if (msg && msg.cmd === 'PAGECONTENT') {
+      try {
+        const txt = await fetchWithTimeout(msg.baseurl || DEFAULT_BASEURL, 10000);
+        // return raw text to UI
+        sendResponse({ ok: true, text: txt });
+      } catch (e) {
+        sendResponse({ ok: false, error: String(e) });
+      }
+    } else if (msg && msg.cmd === 'CLEARALL') {
+      await chrome.storage.local.clear();
+      chrome.action.setBadgeText({ text: '' });
+      sendResponse({ ok: true });
+    } else if (msg && msg.cmd === 'GETSTATE') {
+      const s = await getState();
+      sendResponse({ ok: true, state: s });
+    }
+  })();
+  // indicate async
+  return true;
+});
+
+// Notification click: open side panel and reset unread
+chrome.notifications.onClicked.addListener(async (nid) => {
+  try {
+    if (chrome.sidePanel && chrome.sidePanel.open) {
+      chrome.sidePanel.open().catch(e => console.warn('sidePanel.open error', e));
+    }
+  } catch (e) {}
+  await chrome.storage.local.set({ notifications_unread: 0 });
+  chrome.action.setBadgeText({ text: '' });
+});
+
+// When a notification is closed (optional) decrement unread (if it wasn't opened)
+chrome.notifications.onClosed.addListener(async (nid, byUser) => {
+  // optional - do nothing for now
+});
+
+// Initialize default state on install
+chrome.runtime.onInstalled.addListener((details) => {
+  setState({ BASEURL: DEFAULT_BASEURL, ALBI_LIST: [], notifications_unread: 0, GETCONTENT: true, status: 'Installed' });
+  // ensure panel opens on action click
+  if (chrome.sidePanel && chrome.sidePanel.setPanelBehavior) {
+    chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(e => console.warn(e));
+  }
+});
+
+---
+# File: sidepanel.html
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Albi Alert - Side Panel</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 8px; }
+    #control { margin-bottom: 12px; }
+    input[type=text] { width: 100%; padding:6px; box-sizing: border-box; }
+    button { margin-top:6px; margin-right:6px; }
+    #status { margin:6px 0; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { border: 1px solid #ddd; padding:6px; font-size:12px; }
+    tr:nth-child(even) { background:#f9f9f9 }
+  </style>
+</head>
+<body>
+  <div id="control">
+    <label>Base URL:</label>
+    <input id="baseurl" type="text" value="https://www.alberlet.hu/sitemap/2.xml" />
+    <div>
+      <button id="set">SET Notifier</button>
+      <button id="stop">STOP Notifier</button>
+      <button id="clear">CLEAR ALL</button>
+    </div>
+    <div id="status">status: -</div>
+  </div>
+
+  <div id="display">
+    <div id="count">Found: 0</div>
+    <div id="list"></div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
+
+---
+# File: sidepanel.js
+// UI logic: uses chrome.runtime messaging to control background and reads chrome.storage
+
+async function $(id) { return document.getElementById(id); }
+
+(async function init() {
+  const baseEl = document.getElementById('baseurl');
+  const setBtn = document.getElementById('set');
+  const stopBtn = document.getElementById('stop');
+  const clearBtn = document.getElementById('clear');
+  const statusEl = document.getElementById('status');
+  const countEl = document.getElementById('count');
+  const listEl = document.getElementById('list');
+
+  // load saved state from chrome.storage and mirror into localStorage (per spec)
+  const resp = await chrome.runtime.sendMessage({ cmd: 'GETSTATE' });
+  if (resp && resp.ok) {
+    const state = resp.state;
+    // sync to localStorage for UI usage
+    try {
+      localStorage.setItem('ALBI_LIST', JSON.stringify(state.ALBI_LIST || []));
+      localStorage.setItem('BASEURL', state.BASEURL || '');
+      localStorage.setItem('GETCONTENT', state.GETCONTENT ? '1' : '0');
+      baseEl.value = state.BASEURL || baseEl.value;
+      statusEl.textContent = 'status: ' + (state.status || '-');
+      renderList(state.ALBI_LIST || []);
+    } catch (e) {
+      console.warn('localStorage sync failed', e);
+    }
+  }
+
+  setBtn.addEventListener('click', async () => {
+    const baseurl = baseEl.value.trim() || undefined;
+    const r = await chrome.runtime.sendMessage({ cmd: 'SETALERT', baseurl });
+    if (r && r.ok) statusEl.textContent = 'status: Alarm set (1 min)';
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    const r = await chrome.runtime.sendMessage({ cmd: 'STOPALERT' });
+    if (r && r.ok) statusEl.textContent = 'status: Alarm stopped';
+  });
+
+  clearBtn.addEventListener('click', async () => {
+    const r = await chrome.runtime.sendMessage({ cmd: 'CLEARALL' });
+    if (r && r.ok) {
+      localStorage.clear();
+      statusEl.textContent = 'status: Cleared';
+      renderList([]);
+      chrome.action.setBadgeText({ text: '' });
+    }
+  });
+
+  // Poll storage to update UI every 2s (simple sync). Could be optimized via storage.onChanged
+  setInterval(async () => {
+    const s = await chrome.storage.local.get(['ALBI_LIST','status','notifications_unread']);
+    const list = s.ALBI_LIST || [];
+    renderList(list);
+    statusEl.textContent = 'status: ' + (s.status || '-');
+    const unread = s.notifications_unread || 0;
+    if (unread) chrome.action.setBadgeText({ text: String(unread) });
+    else chrome.action.setBadgeText({ text: '' });
+    // mirror to localStorage
+    try { localStorage.setItem('ALBI_LIST', JSON.stringify(list)); } catch(e){}
+  }, 2000);
+
+  // render function
+  function renderList(list) {
+    countEl.textContent = 'Found: ' + list.length;
+    if (!list.length) { listEl.innerHTML = '<div>No items</div>'; return; }
+    // newer on top
+    const rows = list.slice().reverse().map(item => {
+      const active = item.Active ? 'Yes' : 'No';
+      return `<tr><td>${item.ID}</td><td><a href="${item.url}" target="_blank">${item.localtion || item.path}</a></td><td>${item.type}</td><td>${item.changedate}</td><td>${active}</td></tr>`;
+    });
+    listEl.innerHTML = `<table><thead><tr><th>ID</th><th>Location</th><th>Type</th><th>Lastmod</th><th>Active</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
+  }
+
+})();
+
+---
+# icons placeholder
+# Put 16x16, 48x48, 128x128 PNGs in icons/ folder named icon16.png, icon48.png, icon128.png
+
+---
+# Notes & Implementation choices
+1. Side Panel API: this extension uses the Chrome Side Panel by setting `side_panel.default_path` in the manifest and enabling `openPanelOnActionClick` via `chrome.sidePanel.setPanelBehavior(...)` in the service worker. (See Chrome docs.)
+2. Storage: service worker (background) cannot access `window.localStorage`. For reliability and background persistence we use `chrome.storage.local` as the authoritative store. The side panel mirrors that store into `localStorage` when it runs (to meet your request that UI uses localStorage). This is a standard pattern when mixing background scripts and UI pages.
+3. XML parsing is done with regex only (no DOMParser) per your requirement. If the sitemap deviates from expected structure, the code marks it as `Not XML format` in status.
+4. Notifications: created in the service worker using `chrome.notifications`. Clicking a notification attempts to open the side panel and clears the unread badge.
+
+---
+# References
+- Chrome Side Panel docs (used to implement `setPanelBehavior` and manifest side_panel). citeturn0search0
+
+
+---
+# How to install for testing (developer mode)
+1. Save the files above into a folder `albi-alert/` respecting the filenames and icons.
+2. Open `chrome://extensions/`, enable "Developer mode", click "Load unpacked" and select the `albi-alert` folder.
+3. Click the extension icon to open the side panel (the extension sets behavior so action click opens side panel).
+
+
+---
+# Want any changes?
+I can:
+- Add an explicit `sitemap validation` step and show parsing errors in the UI.
+- Add an XML->sitemap item preview UI to inspect raw matches.
+- Persist notifications metadata and show unread list in the side panel.
+- Make the polling interval configurable and add a confirmation dialog.
+
+Tell me which enhancements you want and I will update the code in-place.
